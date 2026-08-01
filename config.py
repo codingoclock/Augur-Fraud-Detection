@@ -1,4 +1,8 @@
 # config.py — these are the values to use
+
+# Class mapping for elliptic_txs_classes.csv: 1=fraud, 0=licit, -1=unlabelled
+LABEL_MAP = {"1": 1, "2": 0, "unknown": -1}
+
 CARE_GNN_CONFIG = {
     "feature_dim": 165,      # Elliptic: 166 cols minus txid = 165 features
     "hidden_dim": 64,
