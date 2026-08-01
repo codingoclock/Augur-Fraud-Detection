@@ -48,3 +48,4 @@ models/checkpoints/
 
 # Env files
 .env
+data/processed/*.pkl
