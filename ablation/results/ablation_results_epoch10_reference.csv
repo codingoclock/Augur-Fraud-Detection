@@ -1,0 +1,4 @@
+variant,f1_illicit,auc_roc,precision_illicit,recall_illicit,epoch,note
+CARE-GNN (full model) @ epoch 10,0.2603,0.8715,0.1527,0.88,10,"transcript-recorded console output, NOT re-verifiable (no epoch-10 checkpoint was ever saved)"
+CARE-GNN w/o RL selector @ epoch 10,0.2374955019791292,0.8770174567780606,0.13647642679900746,0.9141274238227147,10,"MLflow-retrieved, epoch 10 (this variant's only full budget)"
+CARE-GNN w/o label-aware similarity @ epoch 10,0.19295238095238096,0.8366441220135088,0.10757141340129553,0.9353647276084949,10,"MLflow-retrieved, epoch 10 (this variant's only full budget)"
