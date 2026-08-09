@@ -49,3 +49,4 @@ models/checkpoints/
 # Env files
 .env
 data/processed/*.pkl
+full_run_log.txt
