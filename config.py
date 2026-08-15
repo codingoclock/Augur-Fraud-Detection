@@ -32,17 +32,20 @@ CARE_GNN_CONFIG = {
 
     # RL selector config (v3 -- replaces v2's step-decay params entirely)
     "selector_init_p": 0.5,
-    "tau": 0.05,                          # paper: fixed small step, no decay
+    "tau": 0.02,                          # CORRECTED (Level 9): the paper actually specifies
+                                            # tau=0.02, not the 0.05 guessed at in earlier levels
+                                            # when only excerpts, not the full paper, were
+                                            # available. All runs before this correction used
+                                            # 0.05 -- a real methodology gap, not a retune.
     "rl_terminal_window": 10,             # Eq. 7's "e-10" lookback; the actual summed
                                             # window is terminal_window + 1 = 11 terms
                                             # (e-10 through e, inclusive) -- see selector.py
     "rl_terminal_reward_threshold": 2.0,  # Eq. 7: |sum of the 11-term window| <= this -> freeze
 
     # Auxiliary similarity loss (Eq. 11), layer-1 only
-    "lambda1": 1.0,  # not given an exact value in the paper excerpt available here --
-                      # treated as a tunable hyperparameter; report whatever value is
-                      # actually used in the README rather than presenting 1.0 as if
-                      # it were paper-specified
+    "lambda1": 2.0,  # CORRECTED (Level 9): the paper actually specifies lambda1=2, not the
+                      # 1.0 placeholder used in earlier levels when only excerpts were
+                      # available. All runs before this correction used 1.0.
 }
 
 # Class imbalance handling
