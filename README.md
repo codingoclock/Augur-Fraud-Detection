@@ -35,7 +35,7 @@ Generated from real trained-model predictions on the real test split — not pla
 - **`visualization/embedding_umap_graphsage.png`** — UMAP projection of GraphSAGE's learned 64-d hidden embeddings for all 67,504 test-split nodes, coloured by true label (1,083 illicit / 15,587 licit / 50,834 unknown). Shows a visibly distinct illicit cluster separated from the main mass — real evidence the model learned a meaningful separation, not just a good aggregate score. Now includes an in-image explanation of what the plot means and how to read it.
 - **`visualization/embedding_umap_graphsage.html`** — interactive Plotly version of the same projection: hover any point for its real node id, true label, and GraphSAGE P(fraud); zoom, pan, and click a legend entry to isolate one class. The API's own `/predict` example node (136279) is a real point in this projection.
 
-The API's own `GET /subgraph/{node_id}` endpoint (see [Quickstart](#quickstart)) reuses the same fraud-ring renderer, so any node you query live gets the same legend/description panel and hover detail as the two files above.
+The API's own `GET /subgraph/{node_id}` endpoint (see [Running with Docker](#running-with-docker)) reuses the same fraud-ring renderer, so any node you query live gets the same legend/description panel and hover detail as the two files above.
 
 ## Architecture
 
@@ -70,8 +70,8 @@ _Last checked: 2026-08-12, against this repo's actual working tree, a live pytes
 - [x] **Training loop + evaluator** (`training/trainer.py`, `evaluator.py`, `loss.py`) — implemented; supports full CARE-GNN, all three ablation variants, mini-batching, and the corrected balanced-under-sampling protocol.
 - [x] **Ablation study, 7 variants** (`ablation/run_ablation.py`, `experiments/compare.py`) — all 7 rows trained/fit and logged to the `Augur-Elliptic` MLflow experiment; results in `ablation/results/ablation_results.{csv,md}`, regenerable live from MLflow.
 - [x] **Visualization** (`visualization/fraud_rings.py`, `embedding_umap.py`) — real outputs generated from real checkpoints, see [Visualizations](#visualizations) above.
-- [x] **API serving** (`api/main.py`, `schemas.py`, `state.py`, `routes/`) — implemented; `/`, `/predict`, `/subgraph/{node_id}` all verified against a live running server with real node IDs (see [Quickstart](#quickstart)). Note: verification was manual (curl against a live server), not automated — `tests/test_api.py` exists as an empty stub, not real automated coverage.
-- [x] **Entry-point scripts** (`experiments/train_care_gnn.py`, `train_baselines.py`, `compare.py`) — thin, verified-working CLI wrappers around the above; see [Quickstart](#quickstart).
+- [x] **API serving** (`api/main.py`, `schemas.py`, `state.py`, `routes/`) — implemented; `/`, `/predict`, `/subgraph/{node_id}` all verified against a live running server with real node IDs (see [Running with Docker](#running-with-docker)). Note: verification was manual (curl against a live server), not automated — `tests/test_api.py` exists as an empty stub, not real automated coverage.
+- [x] **Entry-point scripts** (`experiments/train_care_gnn.py`, `train_baselines.py`, `compare.py`) — thin, verified-working CLI wrappers around the above; see [Running with Docker](#running-with-docker).
 
 Full test suite: 41 tests collected across `tests/` (6 graph-construction + 35 model/loss/selector-RL/full-forward-pass), all passing as of the last full run.
 
@@ -106,59 +106,9 @@ Real bugs found and corrected across this project's build, not a curated highlig
 
 Dou, Y., Liu, Z., Sun, L., Deng, Y., Peng, H., & Yu, P. S. (2020). *Enhancing Graph Neural Network-based Fraud Detectors against Camouflaged Fraudsters.* CIKM 2020. [https://arxiv.org/abs/2008.08692](https://arxiv.org/abs/2008.08692)
 
-## Quickstart
-
-Every command below is real and has been run against this repo's actual code and data — not a placeholder. Assumes `data/raw/` already has the three Elliptic CSVs (`elliptic_txs_features.csv`, `elliptic_txs_edgelist.csv`, `elliptic_txs_classes.csv`) and the venv is active (`source venv/bin/activate`).
-
-**1. Build the graph**
-
-```bash
-python -m graph.loader
-python -m graph.relations
-```
-
-Loads the raw CSVs, builds the node-index mapping and feature/label arrays (`graph/loader.py`), then constructs the three relations — tdt, tbt, tft — and caches everything to `data/processed/`. Takes **~40 minutes**, almost all of it the tft relation's 203,769×203,769 cosine-similarity neighbor search.
-
-**2. Train and track**
-
-```bash
-python -m experiments.train_care_gnn --checkpoint-path models/checkpoints/care_gnn_full_best.pt
-python -m experiments.train_baselines
-mlflow ui --port 5000   # then open http://localhost:5000 to browse runs
-```
-
-Trains the full 3-relation CARE-GNN (balanced under-sampling, 500 epochs by default) and all three baselines (GraphSAGE, GAT, Isolation Forest), logging every run to the local `Augur-Elliptic` MLflow experiment. **Be realistic about the time**: the full CARE-GNN run takes **~3.5 hours** on a CPU-only machine (500 epochs at ~14–26s/epoch); GraphSAGE and GAT are much cheaper, ~15–25 minutes each at 100 epochs; Isolation Forest fits in under a second. Total for everything: **plan for 4+ hours**, not a quick pass — use `--epochs`/`--benchmark-only` on either script for a fast smoke test instead of the full run. This does *not* reproduce the three additional CARE-GNN ablation variants (single-relation-tdt, w/o RL selector, w/o label-aware similarity) in the results table above — see the known gap noted in [Build status](#build-status).
-
-**3. Reproduce the ablation study**
-
-```bash
-python -m experiments.compare
-# equivalently: python -m ablation.run_ablation
-```
-
-Pulls every run's metrics live from the MLflow experiment (not a static file) and regenerates `ablation/results/ablation_results.{csv,md}`. On a fresh clone that's only run step 2 above, this will show full CARE-GNN + the three baselines; the three ablation-variant rows require the additional `trainer.train()` calls noted above.
-
-**4. Serve predictions**
-
-```bash
-uvicorn api.main:app --reload
-```
-
-Starts the API at `http://127.0.0.1:8000`. Try it against a real node id from the dataset (any integer in `[0, 203769)`):
-
-```bash
-curl http://127.0.0.1:8000/                                  # health + model metadata
-curl -X POST http://127.0.0.1:8000/predict \
-  -H "Content-Type: application/json" \
-  -d '{"node_id": 136279, "model": "graphsage"}'               # or "model": "care_gnn"
-curl http://127.0.0.1:8000/subgraph/136279 -o subgraph.html    # 2-hop tdt neighborhood, open in a browser
-```
-
 ## Running with Docker
 
-An alternative to the venv-based Quickstart above, for anyone who'd rather not set up a local Python environment. Same underlying code and data requirements — just containerized.
-
-**Prerequisites**: Docker installed, and `data/raw/` already has the three Elliptic CSVs (`elliptic_txs_features.csv`, `elliptic_txs_edgelist.csv`, `elliptic_txs_classes.csv`) downloaded from [Kaggle](https://www.kaggle.com/datasets/ellipticco/elliptic-data-set) — same requirement as the venv path above.
+**Prerequisites**: Docker installed, and `data/raw/` already has the three Elliptic CSVs (`elliptic_txs_features.csv`, `elliptic_txs_edgelist.csv`, `elliptic_txs_classes.csv`) downloaded from [Kaggle](https://www.kaggle.com/datasets/ellipticco/elliptic-data-set).
 
 **One-step run:**
 
