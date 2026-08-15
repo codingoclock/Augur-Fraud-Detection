@@ -1,0 +1,150 @@
+<html>
+    <head>
+        <meta charset="utf-8">
+        
+            <script src="lib/bindings/utils.js"></script>
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/dist/dist/vis-network.min.css" integrity="sha512-WgxfT5LWjfszlPHXRmBWHkV2eceiWTOBvrKCNbdgDYTHrT2AeLCGbF4sZlZw3UMN3WtL0tGUoIAKsu8mllg/XA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/dist/vis-network.min.js" integrity="sha512-LnvoEWDFrqGHlHmDD2101OrLcbsfkrzoSpvtSQtxK3RMnRV0eOkhhBN2dXHKRrUU8p2DGRTk35n4O8nWSVe1mQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+            
+        
+<center>
+<h1></h1>
+</center>
+
+<!-- <link rel="stylesheet" href="../node_modules/vis/dist/vis.min.css" type="text/css" />
+<script type="text/javascript" src="../node_modules/vis/dist/vis.js"> </script>-->
+        <link
+          href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta3/dist/css/bootstrap.min.css"
+          rel="stylesheet"
+          integrity="sha384-eOJMYsd53ii+scO/bJGFsiCZc+5NDVN2yr8+0RDqr0Ql0h+rP48ckxlpbzKgwra6"
+          crossorigin="anonymous"
+        />
+        <script
+          src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta3/dist/js/bootstrap.bundle.min.js"
+          integrity="sha384-JEW9xMcG8R+pH31jmWH6WWP0WintQrMb4s7ZOdauHnUtxwoG2vI5DkLtS3qm9Ekf"
+          crossorigin="anonymous"
+        ></script>
+
+
+        <center>
+          <h1></h1>
+        </center>
+        <style type="text/css">
+
+             #mynetwork {
+                 width: 100%;
+                 height: 750px;
+                 background-color: #0d1117;
+                 border: 1px solid lightgray;
+                 position: relative;
+                 float: left;
+             }
+
+             
+
+             
+
+             
+        </style>
+    </head>
+
+
+    <body>
+<div style="font-family: -apple-system, Segoe UI, Helvetica, Arial, sans-serif; background:#0d1117; color:#e6edf3; padding: 20px 28px 8px 28px;">
+  <h1 style="margin: 0 0 6px 0; font-size: 22px;">GraphSAGE fraud ring — top 5 highest-confidence illicit predictions, test split</h1>
+  <p style="max-width: 900px; line-height: 1.5; color:#c9d1d9; font-size: 14px;">
+    A <strong>fraud ring</strong> here means the local transaction neighbourhood around one or more
+    nodes the model flags as likely illicit: starting from the <strong style="color:#f0c419;">gold seed node(s)</strong>,
+    the graph expands outward <strong>2 hops</strong> over real <strong>tdt</strong> edges
+    (directed Bitcoin transactions — arrows point from payer to payee), in <em>both</em> directions,
+    so you see money flowing both into and out of the seed. Coordinated fraud tends to show up
+    structurally as a seed transacting with a cluster of other illicit-looking nodes rather than
+    in isolation — that clustering is what this view is meant to make visible.
+  </p>
+  <div style="display:flex; gap: 28px; flex-wrap: wrap; margin: 14px 0 10px 0; font-size: 13px;">
+    <div><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#f0c419;border:2px solid #fff;margin-right:6px;vertical-align:middle;"></span>Seed node — the flagged/queried node (5)</div>
+    <div><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:red;margin-right:6px;vertical-align:middle;"></span>Illicit — labelled fraud, or model P(fraud) ≥ 0.5 if unlabelled (2)</div>
+    <div><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:blue;margin-right:6px;vertical-align:middle;"></span>Licit — labelled non-fraud, or model P(fraud) &lt; 0.5 if unlabelled (7)</div>
+    <div><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:grey;margin-right:6px;vertical-align:middle;"></span>Unlabelled / unscored (22)</div>
+  </div>
+  <p style="font-size: 12.5px; color:#8b949e; margin: 0 0 10px 0;">
+    31 nodes · 26 tdt edges shown. Drag nodes to rearrange, scroll to zoom, hover any
+    node or edge for its real label/score, use the Physics panel below the graph to freeze the layout.
+  </p>
+</div>
+
+        <div class="card" style="width: 100%">
+            
+            
+            <div id="mynetwork" class="card-body"></div>
+        </div>
+
+        
+        
+
+        <script type="text/javascript">
+
+              // initialize global variables.
+              var edges;
+              var nodes;
+              var allNodes;
+              var allEdges;
+              var nodeColors;
+              var originalNodes;
+              var network;
+              var container;
+              var options, data;
+              var filter = {
+                  item : '',
+                  property : '',
+                  value : []
+              };
+
+              
+
+              
+
+              // This method is responsible for drawing the graph, returns the drawn network
+              function drawGraph() {
+                  var container = document.getElementById('mynetwork');
+
+                  
+
+                  // parsing and collecting nodes and edges from the python
+                  nodes = new vis.DataSet([{"borderWidth": 1, "color": "blue", "font": {"color": "white"}, "id": 152640, "label": 152640, "shape": "dot", "size": 14, "title": "Node 152640\nTrue label: unlabelled\nModel P(fraud): 0.087"}, {"borderWidth": 1, "color": "blue", "font": {"color": "white"}, "id": 151484, "label": 151484, "shape": "dot", "size": 14, "title": "Node 151484\nTrue label: licit (labelled)\nModel P(fraud): 0.000"}, {"borderWidth": 1, "color": "blue", "font": {"color": "white"}, "id": 152066, "label": 152066, "shape": "dot", "size": 14, "title": "Node 152066\nTrue label: unlabelled\nModel P(fraud): 0.169"}, {"borderWidth": 1, "color": "red", "font": {"color": "white"}, "id": 152455, "label": 152455, "shape": "dot", "size": 14, "title": "Node 152455\nTrue label: fraud (labelled)\nModel P(fraud): 0.718"}, {"borderWidth": 3, "color": "gold", "font": {"color": "white"}, "id": 154134, "label": "154134", "shape": "dot", "size": 30, "title": "Node 154134\nTrue label: fraud (labelled)\nModel P(fraud): 0.999\nRole: SEED \u2014 this is the flagged node the ring is centred on"}, {"borderWidth": 1, "color": "blue", "font": {"color": "white"}, "id": 151474, "label": 151474, "shape": "dot", "size": 14, "title": "Node 151474\nTrue label: licit (labelled)\nModel P(fraud): 0.000"}, {"borderWidth": 1, "color": "blue", "font": {"color": "white"}, "id": 153547, "label": 153547, "shape": "dot", "size": 14, "title": "Node 153547\nTrue label: unlabelled\nModel P(fraud): 0.065"}, {"borderWidth": 1, "color": "red", "font": {"color": "white"}, "id": 153490, "label": 153490, "shape": "dot", "size": 14, "title": "Node 153490\nTrue label: unlabelled\nModel P(fraud): 0.950"}, {"borderWidth": 1, "color": "blue", "font": {"color": "white"}, "id": 152659, "label": 152659, "shape": "dot", "size": 14, "title": "Node 152659\nTrue label: unlabelled\nModel P(fraud): 0.039"}, {"borderWidth": 1, "color": "blue", "font": {"color": "white"}, "id": 153428, "label": 153428, "shape": "dot", "size": 14, "title": "Node 153428\nTrue label: licit (labelled)\nModel P(fraud): 0.045"}, {"borderWidth": 3, "color": "gold", "font": {"color": "white"}, "id": 153109, "label": "153109", "shape": "dot", "size": 30, "title": "Node 153109\nTrue label: unlabelled\nModel P(fraud): 0.998\nRole: SEED \u2014 this is the flagged node the ring is centred on"}, {"borderWidth": 1, "color": "blue", "font": {"color": "white"}, "id": 151960, "label": 151960, "shape": "dot", "size": 14, "title": "Node 151960\nTrue label: unlabelled\nModel P(fraud): 0.000"}, {"borderWidth": 1, "color": "blue", "font": {"color": "white"}, "id": 150940, "label": 150940, "shape": "dot", "size": 14, "title": "Node 150940\nTrue label: unlabelled\nModel P(fraud): 0.353"}, {"borderWidth": 1, "color": "blue", "font": {"color": "white"}, "id": 149339, "label": 149339, "shape": "dot", "size": 14, "title": "Node 149339\nTrue label: unlabelled\nModel P(fraud): 0.477"}, {"borderWidth": 3, "color": "gold", "font": {"color": "white"}, "id": 150941, "label": "150941", "shape": "dot", "size": 30, "title": "Node 150941\nTrue label: unlabelled\nModel P(fraud): 0.999\nRole: SEED \u2014 this is the flagged node the ring is centred on"}, {"borderWidth": 1, "color": "blue", "font": {"color": "white"}, "id": 136796, "label": 136796, "shape": "dot", "size": 14, "title": "Node 136796\nTrue label: unlabelled\nModel P(fraud): 0.174"}, {"borderWidth": 1, "color": "blue", "font": {"color": "white"}, "id": 138268, "label": 138268, "shape": "dot", "size": 14, "title": "Node 138268\nTrue label: unlabelled\nModel P(fraud): 0.358"}, {"borderWidth": 3, "color": "gold", "font": {"color": "white"}, "id": 140057, "label": "140057", "shape": "dot", "size": 30, "title": "Node 140057\nTrue label: unlabelled\nModel P(fraud): 0.999\nRole: SEED \u2014 this is the flagged node the ring is centred on"}, {"borderWidth": 1, "color": "blue", "font": {"color": "white"}, "id": 153692, "label": 153692, "shape": "dot", "size": 14, "title": "Node 153692\nTrue label: licit (labelled)\nModel P(fraud): 0.329"}, {"borderWidth": 1, "color": "red", "font": {"color": "white"}, "id": 136795, "label": 136795, "shape": "dot", "size": 14, "title": "Node 136795\nTrue label: unlabelled\nModel P(fraud): 0.645"}, {"borderWidth": 1, "color": "blue", "font": {"color": "white"}, "id": 153439, "label": 153439, "shape": "dot", "size": 14, "title": "Node 153439\nTrue label: unlabelled\nModel P(fraud): 0.218"}, {"borderWidth": 1, "color": "blue", "font": {"color": "white"}, "id": 153511, "label": 153511, "shape": "dot", "size": 14, "title": "Node 153511\nTrue label: licit (labelled)\nModel P(fraud): 0.110"}, {"borderWidth": 1, "color": "blue", "font": {"color": "white"}, "id": 136365, "label": 136365, "shape": "dot", "size": 14, "title": "Node 136365\nTrue label: unlabelled\nModel P(fraud): 0.259"}, {"borderWidth": 1, "color": "blue", "font": {"color": "white"}, "id": 136366, "label": 136366, "shape": "dot", "size": 14, "title": "Node 136366\nTrue label: unlabelled\nModel P(fraud): 0.264"}, {"borderWidth": 3, "color": "gold", "font": {"color": "white"}, "id": 140270, "label": "140270", "shape": "dot", "size": 30, "title": "Node 140270\nTrue label: unlabelled\nModel P(fraud): 0.999\nRole: SEED \u2014 this is the flagged node the ring is centred on"}, {"borderWidth": 1, "color": "blue", "font": {"color": "white"}, "id": 153456, "label": 153456, "shape": "dot", "size": 14, "title": "Node 153456\nTrue label: licit (labelled)\nModel P(fraud): 0.003"}, {"borderWidth": 1, "color": "blue", "font": {"color": "white"}, "id": 153718, "label": 153718, "shape": "dot", "size": 14, "title": "Node 153718\nTrue label: licit (labelled)\nModel P(fraud): 0.025"}, {"borderWidth": 1, "color": "red", "font": {"color": "white"}, "id": 136505, "label": 136505, "shape": "dot", "size": 14, "title": "Node 136505\nTrue label: unlabelled\nModel P(fraud): 0.820"}, {"borderWidth": 1, "color": "blue", "font": {"color": "white"}, "id": 151483, "label": 151483, "shape": "dot", "size": 14, "title": "Node 151483\nTrue label: unlabelled\nModel P(fraud): 0.104"}, {"borderWidth": 1, "color": "blue", "font": {"color": "white"}, "id": 152573, "label": 152573, "shape": "dot", "size": 14, "title": "Node 152573\nTrue label: unlabelled\nModel P(fraud): 0.002"}, {"borderWidth": 1, "color": "blue", "font": {"color": "white"}, "id": 153663, "label": 153663, "shape": "dot", "size": 14, "title": "Node 153663\nTrue label: unlabelled\nModel P(fraud): 0.136"}]);
+                  edges = new vis.DataSet([{"arrows": "to", "from": 152640, "title": "tdt: real Bitcoin transaction, arrow points from payer to payee", "to": 151484, "width": 1}, {"arrows": "to", "from": 152066, "title": "tdt: real Bitcoin transaction, arrow points from payer to payee", "to": 151484, "width": 1}, {"arrows": "to", "from": 152455, "title": "tdt: real Bitcoin transaction, arrow points from payer to payee", "to": 154134, "width": 1}, {"arrows": "to", "from": 152455, "title": "tdt: real Bitcoin transaction, arrow points from payer to payee", "to": 151474, "width": 1}, {"arrows": "to", "from": 153547, "title": "tdt: real Bitcoin transaction, arrow points from payer to payee", "to": 151484, "width": 1}, {"arrows": "to", "from": 153490, "title": "tdt: real Bitcoin transaction, arrow points from payer to payee", "to": 151484, "width": 1}, {"arrows": "to", "from": 152659, "title": "tdt: real Bitcoin transaction, arrow points from payer to payee", "to": 151484, "width": 1}, {"arrows": "to", "from": 153428, "title": "tdt: real Bitcoin transaction, arrow points from payer to payee", "to": 151484, "width": 1}, {"arrows": "to", "from": 153109, "title": "tdt: real Bitcoin transaction, arrow points from payer to payee", "to": 151484, "width": 1}, {"arrows": "to", "from": 151960, "title": "tdt: real Bitcoin transaction, arrow points from payer to payee", "to": 151484, "width": 1}, {"arrows": "to", "from": 150940, "title": "tdt: real Bitcoin transaction, arrow points from payer to payee", "to": 149339, "width": 1}, {"arrows": "to", "from": 150940, "title": "tdt: real Bitcoin transaction, arrow points from payer to payee", "to": 150941, "width": 1}, {"arrows": "to", "from": 136796, "title": "tdt: real Bitcoin transaction, arrow points from payer to payee", "to": 138268, "width": 1}, {"arrows": "to", "from": 136796, "title": "tdt: real Bitcoin transaction, arrow points from payer to payee", "to": 140057, "width": 1}, {"arrows": "to", "from": 153692, "title": "tdt: real Bitcoin transaction, arrow points from payer to payee", "to": 151484, "width": 1}, {"arrows": "to", "from": 136795, "title": "tdt: real Bitcoin transaction, arrow points from payer to payee", "to": 136796, "width": 1}, {"arrows": "to", "from": 153439, "title": "tdt: real Bitcoin transaction, arrow points from payer to payee", "to": 151484, "width": 1}, {"arrows": "to", "from": 153511, "title": "tdt: real Bitcoin transaction, arrow points from payer to payee", "to": 151484, "width": 1}, {"arrows": "to", "from": 136365, "title": "tdt: real Bitcoin transaction, arrow points from payer to payee", "to": 136366, "width": 1}, {"arrows": "to", "from": 136366, "title": "tdt: real Bitcoin transaction, arrow points from payer to payee", "to": 140270, "width": 1}, {"arrows": "to", "from": 153456, "title": "tdt: real Bitcoin transaction, arrow points from payer to payee", "to": 151484, "width": 1}, {"arrows": "to", "from": 153718, "title": "tdt: real Bitcoin transaction, arrow points from payer to payee", "to": 151484, "width": 1}, {"arrows": "to", "from": 136505, "title": "tdt: real Bitcoin transaction, arrow points from payer to payee", "to": 136366, "width": 1}, {"arrows": "to", "from": 151483, "title": "tdt: real Bitcoin transaction, arrow points from payer to payee", "to": 151484, "width": 1}, {"arrows": "to", "from": 152573, "title": "tdt: real Bitcoin transaction, arrow points from payer to payee", "to": 151484, "width": 1}, {"arrows": "to", "from": 153663, "title": "tdt: real Bitcoin transaction, arrow points from payer to payee", "to": 151484, "width": 1}]);
+
+                  nodeColors = {};
+                  allNodes = nodes.get({ returnType: "Object" });
+                  for (nodeId in allNodes) {
+                    nodeColors[nodeId] = allNodes[nodeId].color;
+                  }
+                  allEdges = edges.get({ returnType: "Object" });
+                  // adding nodes and edges to the graph
+                  data = {nodes: nodes, edges: edges};
+
+                  var options = {"physics": {"stabilization": {"iterations": 200}}, "edges": {"arrows": {"to": {"enabled": true}}, "color": {"color": "#4a5568", "highlight": "#f0c419"}, "smooth": {"type": "continuous"}}, "interaction": {"hover": true, "tooltipDelay": 100, "navigationButtons": true, "keyboard": true}, "configure": {"enabled": true, "filter": ["physics"], "showButton": true}};
+
+                  
+
+
+                  
+
+                  network = new vis.Network(container, data, options);
+
+                  
+
+                  
+
+                  
+
+
+                  
+
+                  return network;
+
+              }
+              drawGraph();
+        </script>
+    </body>
+</html>
