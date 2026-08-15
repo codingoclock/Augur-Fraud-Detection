@@ -1,15 +1,109 @@
-version: "3.8"
-
 services:
   mlflow:
     image: python:3.11-slim
     working_dir: /mlflow
-    command: >
-      bash -c "pip install mlflow>=2.8.0 &&
-               mlflow server --host 0.0.0.0 --port 5000
-               --backend-store-uri /mlflow/mlruns
-               --default-artifact-root /mlflow/mlruns"
+    # A single-line string, not a YAML folded (`>`) block: the folded form
+    # here left literal newlines in the multi-line continuation instead of
+    # joining them into spaces, so bash split it into multiple statements
+    # and choked on "--backend-store-uri" as its own command.
+    command: "bash -c \"pip install mlflow>=2.8.0 && mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri /mlflow/mlruns --default-artifact-root /mlflow/mlruns\""
+    environment:
+      # RECURRING GOTCHA (hit twice): mlflow>=2.8.0 resolves to the latest
+      # 3.x at install time, which refuses the plain filesystem tracking
+      # backend by default (MlflowException: "in maintenance mode") unless
+      # this is set. Bitten once during bare-metal training (outside
+      # Docker) and again the first time this mlflow *server* container
+      # was brought up -- do not remove this on any future mlflow/env
+      # cleanup pass without re-testing a cold start. app/api set it too
+      # (their own in-process mlflow client needs it independently).
+      - MLFLOW_ALLOW_FILE_STORE=true
     ports:
-      - "5000:5000"
+      # Host 5001 -> container 5000: port 5000 collides with macOS's
+      # AirPlay Receiver (ControlCenter), which listens on 0.0.0.0:5000
+      # by default. The container's own port stays 5000 (matches
+      # --port 5000 above); only the host-side mapping moves.
+      - "5001:5000"
     volumes:
       - ./mlruns:/mlflow/mlruns
+
+  # One-off job runner: `docker-compose run app <command>` for anything
+  # that isn't the long-running API server (graph build, training,
+  # ablation, visualization generation). No fixed long-running command --
+  # the default just prints usage and exits, so `docker-compose up` alone
+  # doesn't leave a useless idle container behind.
+  app:
+    build: .
+    image: augur:latest
+    # No custom entrypoint: the Dockerfile sets no ENTRYPOINT, so this
+    # `command` is the whole argv and `docker compose run app <command>`
+    # fully replaces it -- e.g. `docker compose run app python3 -m
+    # graph.loader` becomes exactly that argv, not appended to anything.
+    # (An earlier version pinned entrypoint to ["python3", "-c"], which
+    # silently broke every one-off invocation: the override command got
+    # appended as extra args to `-c` instead of replacing it.)
+    command:
+      - python3
+      - "-c"
+      - "print('augur app image ready. Run a one-off job via: docker compose run app python3 -m <module>')"
+    depends_on:
+      - mlflow
+    environment:
+      # See the mlflow service's own MLFLOW_ALLOW_FILE_STORE comment above
+      # -- same recurring gotcha, needed here for this container's
+      # in-process mlflow client (training/logging code), independent of
+      # whether the mlflow server container has it set.
+      - MLFLOW_ALLOW_FILE_STORE=true
+    volumes:
+      # User-supplied, license-restricted raw CSVs -- read-only, never
+      # written to by the app, never baked into the image.
+      - ./data/raw:/app/data/raw:ro
+      # Cached graph artifacts (~163MB) -- bind-mounted to the host dir
+      # (not a named Docker volume) so the ~40min graph-build step doesn't
+      # rerun on every container recreation, AND so it stays the same
+      # artifacts run.sh checks for on the host before deciding whether to
+      # trigger a build. A named volume would start empty regardless of
+      # what's already on the host (data/processed/*.pkl is dockerignored,
+      # unlike checkpoints, so nothing seeds it from the image either) --
+      # that would silently desync run.sh's "already cached" check from
+      # what the container actually sees.
+      - ./data/processed:/app/data/processed
+      # Trained model weights -- named volume, per the checkpoint decision
+      # below. Docker auto-seeds a fresh named volume from the image's own
+      # directory contents on first creation, so this starts populated with
+      # the 5 checkpoints baked into the image (see Dockerfile/.dockerignore)
+      # even before any training has run in this environment; any future
+      # retraining through `docker-compose run app ...` persists here across
+      # restarts instead of being lost when the container exits.
+      - checkpoints:/app/models/checkpoints
+      # MLflow's local file store -- bind-mounted to the SAME host directory
+      # the mlflow service above uses (different in-container paths,
+      # /app/mlruns vs /mlflow/mlruns, but volumes map by host path, so both
+      # containers see the same underlying data). The app writes/reads this
+      # directly as a file store; it does not need the mlflow service's HTTP
+      # port to be up to function correctly.
+      - ./mlruns:/app/mlruns
+      # Generated outputs land on the host, not trapped in a container.
+      - ./ablation/results:/app/ablation/results
+      - ./visualization:/app/visualization
+
+  api:
+    build: .
+    image: augur:latest
+    command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    depends_on:
+      - mlflow
+    ports:
+      - "8000:8000"
+    environment:
+      # See the mlflow service's own MLFLOW_ALLOW_FILE_STORE comment above
+      # -- same recurring gotcha, needed here for the API's in-process
+      # mlflow client.
+      - MLFLOW_ALLOW_FILE_STORE=true
+    volumes:
+      - ./data/raw:/app/data/raw:ro
+      - ./data/processed:/app/data/processed
+      - checkpoints:/app/models/checkpoints
+      - ./mlruns:/app/mlruns
+
+volumes:
+  checkpoints:

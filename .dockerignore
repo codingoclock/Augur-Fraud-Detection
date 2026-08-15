@@ -1,0 +1,31 @@
+# Kaggle-license-restricted raw data -- must never end up in an image layer,
+# even if present on the host machine running `docker build`. Runtime-mounted
+# only (see docker-compose.yml).
+data/raw/
+
+# Large, regeneratable derived artifacts -- populated at runtime into a
+# named volume by the graph-build step, not baked into the image.
+data/processed/*.pkl
+
+# Local dev environment / VCS / caches -- irrelevant inside the image and
+# would otherwise bloat the build context.
+venv/
+.venv/
+.git/
+.pytest_cache/
+__pycache__/
+*.pyc
+.DS_Store
+notebooks/.ipynb_checkpoints/
+
+# MLflow's local file store -- runtime state, bind-mounted, not part of the
+# image itself.
+mlruns/
+
+# Misc local artifacts.
+full_run_log.txt
+*.log
+
+# models/checkpoints/ is deliberately NOT excluded here -- see the report's
+# reasoning for why the 5 trained checkpoints (~1MB total) ARE baked into
+# the image.
