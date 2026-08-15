@@ -57,7 +57,7 @@ from training.loss import SimilarityAuxLoss, WeightedFocalLoss, care_gnn_total_l
 
 RELATION_NAMES = ["tdt", "tbt", "tft"]
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-CHECKPOINT_PATH = PROJECT_ROOT / "models" / "checkpoints" / "care_gnn_best.pt"
+CHECKPOINTS_DIR = PROJECT_ROOT / "models" / "checkpoints"
 MLRUNS_PATH = PROJECT_ROOT / "mlruns"
 EVAL_EVERY_N_EPOCHS = 5  # see module docstring / final report for the reasoning
 BATCH_SIZE = 2048  # see final report for the benchmark that landed on this value
@@ -171,6 +171,8 @@ def _distance_sum_and_count(layer_pred_local, fraud_local_pos, selected_neighbor
 
 def train(
     config: dict = CARE_GNN_CONFIG,
+    *,
+    checkpoint_path: Path,
     benchmark_only: bool = False,
     max_neighbors: int = 64,
     batch_size: int = BATCH_SIZE,
@@ -178,7 +180,10 @@ def train(
     enable_rl: bool = True,
     ablation_variant: str = "full",
     run_name: str | None = None,
-    checkpoint_path: Path | None = None,
+    balanced_undersampling: bool = False,
+    fraud_chunk_size: int = 1024,
+    focal_class_weights: tuple | None = None,
+    eval_every_n_epochs: int = EVAL_EVERY_N_EPOCHS,
 ):
     """Ablation hooks (Level 8), all defaulting to the original full-model
     behaviour so the main run is unaffected:
@@ -199,6 +204,27 @@ def train(
         care_gnn_total_loss's `lambda1 * l_simi` term makes the aux loss's
         gradient contribution exactly zero when lambda1=0, which is exactly
         "the layer-1 MLP never receives gradient."
+
+    Level 9 correction -- balanced under-sampling (paper Section 4.1.4):
+      - balanced_undersampling: if True, replaces the natural-imbalance
+        mini-batch construction with the paper's actual protocol -- each
+        batch's classification centers are an equal number of fraud (y=1)
+        and licit (y=0) TRAIN-labelled nodes, sampled fresh each batch. Graph
+        structure/neighbor sampling is UNCHANGED: every node, labelled or
+        not, remains eligible as a neighbor during aggregation -- only which
+        nodes are chosen as classification centers is constrained. One epoch
+        = one full pass through all fraud-labelled train nodes (each used
+        exactly once, chunked into `fraud_chunk_size` pieces), paired each
+        time with a freshly-drawn random licit sample of the same size
+        (without replacement within a batch, but licit nodes CAN repeat
+        across different batches/epochs since the licit pool (26,432) is
+        resampled from fresh each time, not partitioned).
+      - focal_class_weights: with batches balanced by construction,
+        FRAUD_CLASS_WEIGHT's original purpose (correcting for the dataset's
+        natural ~9:1 imbalance) no longer applies within a batch -- keeping
+        it would OVER-correct an imbalance that no longer exists at the
+        batch level. Defaults to (1.0, 1.0) when balanced_undersampling=True
+        and this is left None; explicit values always override.
     """
     torch.manual_seed(config["seed"])
 
@@ -220,7 +246,13 @@ def train(
     adj_indices = build_relation_indices(selected_adj, num_nodes)
     num_relations = len(relation_names)
 
-    checkpoint_path = checkpoint_path or CHECKPOINT_PATH
+    # No implicit default (Level 10 fix): checkpoint_path is a required,
+    # keyword-only argument -- the previous silent fallback to a shared
+    # "care_gnn_best.pt" is exactly what let the no_rl_selector /
+    # no_label_similarity / single_relation_tdt / full ablation variants
+    # overwrite each other's checkpoints across Level 8/9's runs. Every
+    # caller must now name its own file; there is no path left where a run
+    # can accidentally collide with another's by omission.
 
     model = CAREGNN(
         feature_dim=config["feature_dim"],
@@ -236,7 +268,9 @@ def train(
     # so Adam cannot touch it; no manual filtering needed here.
     optimizer = torch.optim.Adam(model.parameters(), lr=config["lr"], weight_decay=config["weight_decay"])
 
-    focal_loss_fn = WeightedFocalLoss(class_weights=torch.tensor([1.0, FRAUD_CLASS_WEIGHT]))
+    if focal_class_weights is None:
+        focal_class_weights = (1.0, 1.0) if balanced_undersampling else (1.0, FRAUD_CLASS_WEIGHT)
+    focal_loss_fn = WeightedFocalLoss(class_weights=torch.tensor(list(focal_class_weights)))
     aux_loss_fn = SimilarityAuxLoss()
     lambda1 = config["lambda1"]
 
@@ -248,11 +282,19 @@ def train(
     # here even though they contribute to the classification loss above.
     fraud_center_idx = torch.nonzero(train_mask & (labels_full == 1), as_tuple=False).squeeze(-1)
     fraud_center_set = set(fraud_center_idx.tolist())
+    licit_train_idx = torch.nonzero(train_mask & (labels_full == 0), as_tuple=False).squeeze(-1)
     print(
         f"RL fraud-only center set: {fraud_center_idx.shape[0]} nodes "
         f"(train-split AND y==1; distinct from the "
         f"{int((train_mask & (labels_full != -1)).sum())}-node all-labelled-train mask used for the main loss)"
     )
+    if balanced_undersampling:
+        print(
+            f"Balanced under-sampling ON: {fraud_center_idx.shape[0]} fraud / "
+            f"{licit_train_idx.shape[0]} licit available in train split; "
+            f"focal_class_weights={focal_class_weights} (FRAUD_CLASS_WEIGHT not applied -- "
+            f"batches are balanced by construction)"
+        )
 
     # Test-split eval targets, fixed once (labelled nodes only).
     test_labelled_idx = torch.nonzero(test_mask & (labels_full != -1), as_tuple=False).squeeze(-1)
@@ -295,7 +337,7 @@ def train(
             "train_time_steps": "1-34",
             "test_time_steps": "35-49",
             "fraud_class_weight": FRAUD_CLASS_WEIGHT,
-            "eval_every_n_epochs": EVAL_EVERY_N_EPOCHS,
+            "eval_every_n_epochs": eval_every_n_epochs,
             "benchmark_only": benchmark_only,
             "batch_size": batch_size,
             "max_neighbors": max_neighbors,
@@ -318,14 +360,33 @@ def train(
         for epoch in range(1, epochs + 1):
             epoch_start = time.perf_counter()
 
-            # Shuffle train_idx once per epoch, seeded off (config seed, epoch)
-            # for determinism -- standard mini-batch practice, not required
-            # by the spec but costs nothing and avoids a fixed batch
-            # composition every epoch.
             g = torch.Generator().manual_seed(config["seed"] * 1_000_003 + epoch)
-            perm = torch.randperm(train_idx.shape[0], generator=g)
-            epoch_train_idx = train_idx[perm]
-            batches = _chunk(epoch_train_idx, batch_size)
+
+            if balanced_undersampling:
+                # One epoch = one full pass through ALL fraud-labelled train
+                # nodes (each used exactly once), chunked into
+                # fraud_chunk_size pieces; each chunk paired with a FRESH
+                # random licit sample of the same size (without replacement
+                # within the batch, but the licit pool itself is resampled
+                # from scratch every batch -- licit nodes can and will repeat
+                # across batches/epochs, unlike fraud). Neighbor sampling and
+                # graph structure are unaffected -- this only constrains
+                # which nodes are chosen as classification CENTERS.
+                fraud_perm = fraud_center_idx[torch.randperm(fraud_center_idx.shape[0], generator=g)]
+                batches = []
+                for i in range(0, fraud_perm.shape[0], fraud_chunk_size):
+                    fraud_chunk = fraud_perm[i : i + fraud_chunk_size]
+                    n = fraud_chunk.shape[0]
+                    licit_pick = licit_train_idx[torch.randperm(licit_train_idx.shape[0], generator=g)[:n]]
+                    batches.append(torch.cat([fraud_chunk, licit_pick]))
+            else:
+                # Shuffle train_idx once per epoch, seeded off (config seed,
+                # epoch) for determinism -- standard mini-batch practice, not
+                # required by the spec but costs nothing and avoids a fixed
+                # batch composition every epoch.
+                perm = torch.randperm(train_idx.shape[0], generator=g)
+                epoch_train_idx = train_idx[perm]
+                batches = _chunk(epoch_train_idx, batch_size)
 
             # Epoch-level RL accumulators: (weighted_sum, count) per (layer, relation).
             dist_sum = [[0.0] * model.num_relations for _ in range(model.num_layers)]
@@ -459,7 +520,7 @@ def train(
             print(f"         p: {p_snapshot}")
 
             # --- 6: periodic test-split eval, mini-batched over test_labelled_idx ---
-            if epoch % EVAL_EVERY_N_EPOCHS == 0 or epoch == epochs:
+            if epoch % eval_every_n_epochs == 0 or epoch == epochs:
                 model.eval()
                 pred_proba_chunks = []
                 with torch.no_grad():
@@ -510,5 +571,5 @@ def train(
 
 
 if __name__ == "__main__":
-    result = train()
+    result = train(checkpoint_path=CHECKPOINTS_DIR / "care_gnn_full_best.pt")
     print(result)
