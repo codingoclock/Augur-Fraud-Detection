@@ -16,6 +16,8 @@ simple choice within that gap -- documented here as a choice, not something
 the spec pins down, same spirit as aggregator.py's AGG_all choice.
 """
 
+from pathlib import Path
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -47,15 +49,33 @@ class GATBaseline(nn.Module):
         return F.log_softmax(h, dim=-1)
 
 
-def train(config: dict = CARE_GNN_CONFIG, benchmark_only: bool = False):
-    return _shared_train(
+def train(
+    config: dict = CARE_GNN_CONFIG,
+    benchmark_only: bool = False,
+    balanced_undersampling: bool = False,
+    fraud_chunk_size: int = 1024,
+    focal_class_weights: tuple | None = None,
+    ablation_variant: str | None = None,
+    run_name: str | None = None,
+    eval_every_n_epochs: int | None = None,
+    checkpoint_path: Path | None = None,
+):
+    kwargs = dict(
         config=config,
         benchmark_only=benchmark_only,
         model_name="gat",
         model_cls=GATBaseline,
-        checkpoint_path=CHECKPOINT_PATH,
+        checkpoint_path=checkpoint_path or CHECKPOINT_PATH,
         model_kwargs={"heads": GAT_HEADS},
+        balanced_undersampling=balanced_undersampling,
+        fraud_chunk_size=fraud_chunk_size,
+        focal_class_weights=focal_class_weights,
+        ablation_variant=ablation_variant,
+        run_name=run_name,
     )
+    if eval_every_n_epochs is not None:
+        kwargs["eval_every_n_epochs"] = eval_every_n_epochs
+    return _shared_train(**kwargs)
 
 
 if __name__ == "__main__":

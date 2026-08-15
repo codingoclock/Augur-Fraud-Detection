@@ -95,12 +95,33 @@ def train(
     model_cls=GraphSAGEBaseline,
     checkpoint_path: Path = CHECKPOINT_PATH,
     model_kwargs: dict | None = None,
+    balanced_undersampling: bool = False,
+    fraud_chunk_size: int = 1024,
+    focal_class_weights: tuple | None = None,
+    ablation_variant: str | None = None,
+    run_name: str | None = None,
+    eval_every_n_epochs: int = EVAL_EVERY_N_EPOCHS,
 ):
     """Shared full-graph training loop for GraphSAGE and GAT (models.baselines.gat
     imports and calls this with model_cls=GATBaseline) -- the loop itself
     (loss, eval protocol, mlflow logging, checkpointing) is identical between
     the two architectures per the fairness requirement that only the
-    conv-layer type differs, not the training procedure."""
+    conv-layer type differs, not the training procedure.
+
+    Level 9.1 correction -- balanced under-sampling (paper Section 4.1.4),
+    matching training/trainer.py's CARE-GNN protocol: when True, each
+    optimizer step's classification loss is computed over an equal number of
+    fraud (y=1) and licit (y=0) TRAIN-labelled nodes, sampled fresh each
+    batch, instead of the whole train split at once. Message passing is
+    UNCHANGED -- model(x_full, edge_index) still computes embeddings for
+    every node every batch (GraphSAGE/GAT need full-graph structure for
+    correct aggregation regardless, and it's cheap here, ~3-5s), only the
+    loss is restricted to the sampled balanced subset via indexing. One
+    epoch = one full pass through all fraud-labelled train nodes.
+    focal_class_weights defaults to (1.0, 1.0) when balanced (see
+    training/trainer.py's identical reasoning: FRAUD_CLASS_WEIGHT would
+    over-correct an imbalance that no longer exists at the batch level).
+    """
     torch.manual_seed(config["seed"])
 
     x_full, labels_full, edge_index, train_mask, test_mask, merged_edge_count = _load_merged_graph()
@@ -113,14 +134,21 @@ def train(
         **(model_kwargs or {}),
     )
     optimizer = torch.optim.Adam(model.parameters(), lr=config["lr"], weight_decay=config["weight_decay"])
-    focal_loss_fn = WeightedFocalLoss(class_weights=torch.tensor([1.0, FRAUD_CLASS_WEIGHT]))
+    if focal_class_weights is None:
+        focal_class_weights = (1.0, 1.0) if balanced_undersampling else (1.0, FRAUD_CLASS_WEIGHT)
+    focal_loss_fn = WeightedFocalLoss(class_weights=torch.tensor(list(focal_class_weights)))
+
+    fraud_train_idx = torch.nonzero(train_mask & (labels_full == 1), as_tuple=False).squeeze(-1)
+    licit_train_idx = torch.nonzero(train_mask & (labels_full == 0), as_tuple=False).squeeze(-1)
+    train_idx = torch.nonzero(train_mask, as_tuple=False).squeeze(-1)
 
     test_labelled_idx = torch.nonzero(test_mask & (labels_full != -1), as_tuple=False).squeeze(-1)
     test_y_true = labels_full[test_labelled_idx].numpy()
 
     mlflow.set_tracking_uri(MLRUNS_PATH.as_uri())
     mlflow.set_experiment("Augur-Elliptic")
-    run_name = f"{model_name}-benchmark" if benchmark_only else f"{model_name}-baseline"
+    if run_name is None:
+        run_name = f"{model_name}-benchmark" if benchmark_only else f"{model_name}-baseline"
 
     epochs = 1 if benchmark_only else config["epochs"]
     best_f1_illicit = -1.0
@@ -132,42 +160,66 @@ def train(
         mlflow.log_params({
             **{k: v for k, v in config.items() if not isinstance(v, range)},
             "fraud_class_weight": FRAUD_CLASS_WEIGHT,
-            "eval_every_n_epochs": EVAL_EVERY_N_EPOCHS,
+            "eval_every_n_epochs": eval_every_n_epochs,
             "benchmark_only": benchmark_only,
             "merged_edge_count": merged_edge_count,
             "graph_mode": "merged_tdt_tbt_tft",
+            "balanced_undersampling": balanced_undersampling,
+            "focal_class_weights": str(focal_class_weights),
+            "epochs_trained": epochs,
         })
         mlflow.set_tags({
             "model_type": model_name,
             "dataset": "elliptic",
             "relations_used": "tdt+tbt+tft (merged, deduplicated)",
-            "ablation_variant": f"{model_name}_baseline",
+            "ablation_variant": ablation_variant or f"{model_name}_baseline",
+            "protocol": "corrected" if balanced_undersampling else "original",
+            "epochs_trained": str(epochs),
         })
 
         for epoch in range(1, epochs + 1):
             epoch_start = time.perf_counter()
-
             model.train()
-            optimizer.zero_grad()
-            out = model(x_full, edge_index)
 
-            gnn_targets_train = torch.where(train_mask, labels_full, torch.full_like(labels_full, -1))
-            loss = focal_loss_fn(out, gnn_targets_train)
-            loss.backward()
-            optimizer.step()
+            g = torch.Generator().manual_seed(config["seed"] * 1_000_003 + epoch)
+
+            if balanced_undersampling:
+                fraud_perm = fraud_train_idx[torch.randperm(fraud_train_idx.shape[0], generator=g)]
+                batch_losses = []
+                for i in range(0, fraud_perm.shape[0], fraud_chunk_size):
+                    fraud_chunk = fraud_perm[i : i + fraud_chunk_size]
+                    n = fraud_chunk.shape[0]
+                    licit_pick = licit_train_idx[torch.randperm(licit_train_idx.shape[0], generator=g)[:n]]
+                    batch_centers = torch.cat([fraud_chunk, licit_pick])
+
+                    optimizer.zero_grad()
+                    out = model(x_full, edge_index)
+                    loss = focal_loss_fn(out[batch_centers], labels_full[batch_centers])
+                    loss.backward()
+                    optimizer.step()
+                    batch_losses.append(loss.item())
+                loss_value = sum(batch_losses) / len(batch_losses)
+            else:
+                optimizer.zero_grad()
+                out = model(x_full, edge_index)
+                gnn_targets_train = torch.where(train_mask, labels_full, torch.full_like(labels_full, -1))
+                loss = focal_loss_fn(out, gnn_targets_train)
+                loss.backward()
+                optimizer.step()
+                loss_value = loss.item()
 
             epoch_elapsed = time.perf_counter() - epoch_start
             epoch_times.append(epoch_elapsed)
-            final_total_loss = loss.item()
+            final_total_loss = loss_value
 
             peak_rss_gb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e9
             mlflow.log_metrics(
-                {"train/loss": loss.item(), "epoch_seconds": epoch_elapsed, "peak_rss_gb": peak_rss_gb},
+                {"train/loss": loss_value, "epoch_seconds": epoch_elapsed, "peak_rss_gb": peak_rss_gb},
                 step=epoch,
             )
-            print(f"[{model_name}] epoch {epoch:3d} | loss={loss.item():.4f} | {epoch_elapsed:.2f}s | peak_rss={peak_rss_gb:.2f}GB")
+            print(f"[{model_name}] epoch {epoch:3d} | loss={loss_value:.4f} | {epoch_elapsed:.2f}s | peak_rss={peak_rss_gb:.2f}GB")
 
-            if epoch % EVAL_EVERY_N_EPOCHS == 0 or epoch == epochs:
+            if epoch % eval_every_n_epochs == 0 or epoch == epochs:
                 model.eval()
                 with torch.no_grad():
                     out_eval = model(x_full, edge_index)
