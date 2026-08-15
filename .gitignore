@@ -36,8 +36,11 @@ ENV/
 mlruns/
 mlartifacts/
 
-# Model checkpoints
-models/checkpoints/
+# Model checkpoints: deliberately NOT ignored. The 5 trained checkpoints
+# total ~1MB (small models: feature_dim=165, hidden_dim=64) and carry no
+# license restriction (unlike data/raw/, which stays ignored below) -- they
+# are committed so a fresh clone + `docker build` gets a working demo
+# without requiring a multi-hour retrain first. See README/run.sh.
 
 # OS
 .DS_Store
