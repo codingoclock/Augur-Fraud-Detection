@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Augur Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --void: #05070a;
+    --ink: #0d1117;
+    --line: #1e2733;
+    --paper: #e9edf2;
+    --muted: #7d8b9a;
+    --faint: #4a5563;
+    --gold: #f2c14e;
+    --gold-dim: #8a6d2e;
+    --illicit: #e5534b;
+    --licit: #3f8fd6;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    min-height: 100%;
+    background: var(--void);
+    color: var(--paper);
+  }
+
+  body {
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+  }
+
+  a { color: var(--gold); }
+
+  header.top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 22px 6vw 18px;
+    border-bottom: 1px solid var(--line);
+    background:
+      radial-gradient(circle at 20% 0%, rgba(242,193,78,0.06), transparent 60%),
+      var(--ink);
+    flex-wrap: wrap;
+  }
+
+  h1.word {
+    font-family: "Cinzel", serif;
+    font-weight: 600;
+    font-size: clamp(26px, 3.4vw, 38px);
+    letter-spacing: 0.12em;
+    margin: 0;
+    color: var(--paper);
+  }
+
+  h1.word a {
+    color: inherit;
+    text-decoration: none;
+    transition: color 0.15s;
+  }
+  h1.word a:hover {
+    color: var(--gold);
+  }
+
+  header.top .kicker {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin: 4px 0 0;
+  }
+
+  header.top nav a {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-decoration: none;
+    color: var(--muted);
+    border: 1px solid var(--line);
+    padding: 8px 14px;
+    border-radius: 4px;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  header.top nav a:hover {
+    color: var(--gold);
+    border-color: var(--gold-dim);
+  }
+
+  main {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 32px 6vw 64px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+
+  section.panel {
+    background: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 22px 24px;
+  }
+
+  section.panel h2 {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 13px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin: 0 0 18px;
+    font-weight: 600;
+  }
+
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    align-items: flex-end;
+  }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .field label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  input[type="number"], select {
+    background: var(--void);
+    border: 1px solid var(--line);
+    color: var(--paper);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 14px;
+    padding: 10px 12px;
+    border-radius: 6px;
+    min-width: 200px;
+  }
+  input[type="number"]:focus, select:focus {
+    outline: none;
+    border-color: var(--gold-dim);
+  }
+
+  button {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 13px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 11px 20px;
+    border-radius: 6px;
+    border: 1px solid var(--gold-dim);
+    background: transparent;
+    color: var(--gold);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  button:hover:not(:disabled) {
+    background: var(--gold);
+    color: var(--void);
+  }
+  button:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+
+  .status {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12.5px;
+    margin-top: 16px;
+  }
+  .status.loading { color: var(--muted); }
+  .status.error {
+    color: var(--illicit);
+    background: rgba(229, 83, 75, 0.08);
+    border: 1px solid rgba(229, 83, 75, 0.35);
+    border-radius: 6px;
+    padding: 10px 14px;
+  }
+
+  .result-grid {
+    margin-top: 18px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 14px;
+  }
+  .result-grid .cell {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px 14px;
+    background: var(--void);
+  }
+  .result-grid .cell .k {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .result-grid .cell .v {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 17px;
+    font-variant-numeric: tabular-nums;
+    color: var(--paper);
+  }
+  .result-grid .cell .v.fraud { color: var(--illicit); }
+  .result-grid .cell .v.clean { color: var(--licit); }
+
+  .explanation {
+    margin-top: 14px;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--muted);
+    border-top: 1px solid var(--line);
+    padding-top: 14px;
+  }
+
+  .subgraph-frame-wrap {
+    margin-top: 16px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+    background: #0d1117;
+  }
+
+  iframe#subgraphFrame {
+    display: block;
+    width: 100%;
+    height: 1650px;
+    border: none;
+    background: #0d1117;
+  }
+
+  .hint {
+    font-size: 12.5px;
+    color: var(--faint);
+    margin: 0 0 16px;
+  }
+
+  footer.foot {
+    text-align: center;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: var(--faint);
+    padding: 10px 0 40px;
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div>
+    <h1 class="word"><a href="/cover" title="Back to the Augur landing page">AUGUR</a></h1>
+    <p class="kicker">Console</p>
+  </div>
+  <nav>
+    <a href="/">&larr; API status</a>
+  </nav>
+</header>
+
+<main>
+  <section class="panel">
+    <h2>Query a node</h2>
+    <p class="hint">Enter a transaction node id from the cached Elliptic graph and choose a model, then predict.</p>
+    <div class="controls">
+      <div class="field">
+        <label for="nodeId">Node ID</label>
+        <input type="number" id="nodeId" min="0" step="1" placeholder="e.g. 153109">
+      </div>
+      <div class="field">
+        <label for="modelSelect">Model</label>
+        <select id="modelSelect">
+          <option value="graphsage" selected>graphsage</option>
+          <option value="care_gnn">care_gnn</option>
+        </select>
+      </div>
+      <button id="predictBtn">Predict</button>
+      <button id="subgraphBtn" disabled>Show Subgraph</button>
+    </div>
+
+    <div id="predictStatus"></div>
+
+    <div id="predictResult" hidden>
+      <div class="result-grid">
+        <div class="cell">
+          <div class="k">Node ID</div>
+          <div class="v" id="rNodeId">-</div>
+        </div>
+        <div class="cell">
+          <div class="k">Fraud probability</div>
+          <div class="v" id="rProba">-</div>
+        </div>
+        <div class="cell">
+          <div class="k">Is fraud</div>
+          <div class="v" id="rIsFraud">-</div>
+        </div>
+        <div class="cell">
+          <div class="k">Model version</div>
+          <div class="v" id="rModelVersion" style="font-size:13px;">-</div>
+        </div>
+      </div>
+      <p class="explanation" id="rExplanation"></p>
+    </div>
+  </section>
+
+  <section class="panel" id="subgraphPanel" hidden>
+    <h2>Subgraph</h2>
+    <p class="hint">2-hop transaction neighbourhood around the queried node, from <code>/subgraph/&#123;node_id&#125;</code>.</p>
+    <div id="subgraphStatus"></div>
+    <div class="subgraph-frame-wrap" id="subgraphFrameWrap" hidden>
+      <iframe id="subgraphFrame" scrolling="no" title="Subgraph visualization"></iframe>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">GET&nbsp;/&nbsp;&middot;&nbsp;POST&nbsp;/predict&nbsp;&middot;&nbsp;GET&nbsp;/subgraph/&#123;id&#125;&nbsp;&middot;&nbsp;GET&nbsp;/app</footer>
+
+<script>
+(function () {
+  const nodeIdInput = document.getElementById('nodeId');
+  const modelSelect = document.getElementById('modelSelect');
+  const predictBtn = document.getElementById('predictBtn');
+  const subgraphBtn = document.getElementById('subgraphBtn');
+  const predictStatus = document.getElementById('predictStatus');
+  const predictResult = document.getElementById('predictResult');
+  const subgraphPanel = document.getElementById('subgraphPanel');
+  const subgraphStatus = document.getElementById('subgraphStatus');
+  const subgraphFrameWrap = document.getElementById('subgraphFrameWrap');
+  const subgraphFrame = document.getElementById('subgraphFrame');
+
+  function setStatus(el, message, kind) {
+    if (!message) {
+      el.innerHTML = '';
+      return;
+    }
+    el.innerHTML = '<div class="status ' + kind + '">' + message + '</div>';
+  }
+
+  function extractErrorMessage(body) {
+    if (!body) return 'Unknown error.';
+    if (typeof body.detail === 'string') return body.detail;
+    if (Array.isArray(body.detail)) {
+      return body.detail.map(function (d) { return (d.loc ? d.loc.join('.') + ': ' : '') + d.msg; }).join('; ');
+    }
+    return JSON.stringify(body);
+  }
+
+  nodeIdInput.addEventListener('input', function () {
+    subgraphBtn.disabled = nodeIdInput.value.trim() === '';
+  });
+
+  predictBtn.addEventListener('click', async function () {
+    const raw = nodeIdInput.value.trim();
+    if (raw === '') {
+      setStatus(predictStatus, 'Enter a node ID first.', 'error');
+      return;
+    }
+    const nodeId = Number(raw);
+    const model = modelSelect.value;
+
+    predictResult.hidden = true;
+    predictBtn.disabled = true;
+    setStatus(predictStatus, 'Predicting&hellip;', 'loading');
+
+    let res, body;
+    try {
+      res = await fetch('/predict', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ node_id: nodeId, model: model }),
+      });
+      body = await res.json();
+    } catch (err) {
+      setStatus(predictStatus, 'Network error: could not reach the API (' + err.message + ').', 'error');
+      predictBtn.disabled = false;
+      return;
+    }
+
+    predictBtn.disabled = false;
+
+    if (!res.ok) {
+      setStatus(predictStatus, extractErrorMessage(body), 'error');
+      return;
+    }
+
+    setStatus(predictStatus, '', null);
+    document.getElementById('rNodeId').textContent = body.node_id;
+    const probaEl = document.getElementById('rProba');
+    probaEl.textContent = body.fraud_probability.toFixed(4);
+    probaEl.className = 'v ' + (body.is_fraud ? 'fraud' : 'clean');
+    const isFraudEl = document.getElementById('rIsFraud');
+    isFraudEl.textContent = body.is_fraud ? 'TRUE' : 'FALSE';
+    isFraudEl.className = 'v ' + (body.is_fraud ? 'fraud' : 'clean');
+    document.getElementById('rModelVersion').textContent = body.model_version;
+    document.getElementById('rExplanation').textContent = body.explanation;
+    predictResult.hidden = false;
+  });
+
+  subgraphBtn.addEventListener('click', function () {
+    const raw = nodeIdInput.value.trim();
+    if (raw === '') return;
+    const nodeId = Number(raw);
+
+    subgraphPanel.hidden = false;
+    subgraphFrameWrap.hidden = true;
+    setStatus(subgraphStatus, 'Loading subgraph&hellip;', 'loading');
+
+    fetch('/subgraph/' + encodeURIComponent(nodeId))
+      .then(function (res) {
+        if (!res.ok) {
+          return res.json().then(function (body) {
+            throw new Error(extractErrorMessage(body));
+          }).catch(function (e) {
+            throw new Error(e.message || ('Request failed with status ' + res.status));
+          });
+        }
+        return res.text();
+      })
+      .then(function () {
+        setStatus(subgraphStatus, '', null);
+        subgraphFrame.src = '/subgraph/' + encodeURIComponent(nodeId);
+        subgraphFrameWrap.hidden = false;
+      })
+      .catch(function (err) {
+        setStatus(subgraphStatus, err.message, 'error');
+      });
+  });
+})();
+</script>
+
+</body>
+</html>

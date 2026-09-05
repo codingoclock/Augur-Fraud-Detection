@@ -219,7 +219,11 @@ def build_subgraph_html(data: dict, pred_proba: np.ndarray, seed_nodes: np.ndarr
         if s in discovered and d in discovered:
             G.add_edge(s, d, title="tdt: real Bitcoin transaction, arrow points from payer to payee")
 
-    net = Network(height="750px", width="100%", bgcolor="#0d1117", font_color="white", directed=True)
+    # cdn_resources="in_line" (not the "local" default) -- "local" emits a
+    # relative <script src="lib/bindings/utils.js">, which 404s here because
+    # this HTML is served as a string response (HTMLResponse/write_html to a
+    # tempdir), not from a directory that actually has a sibling lib/ folder.
+    net = Network(height="750px", width="100%", bgcolor="#0d1117", font_color="white", directed=True, cdn_resources="in_line")
     net.from_nx(G)
     # Physics on/off toggle folded directly into this JSON (rather than a
     # separate net.show_buttons() call) -- pyvis's set_options() always
@@ -265,6 +269,18 @@ def build_subgraph_html(data: dict, pred_proba: np.ndarray, seed_nodes: np.ndarr
 </div>
 """
     html = output_path.read_text()
+    # pyvis only colors #mynetwork via bgcolor -- <body>/.card are left at
+    # Bootstrap's default white, so without this the graph sits in a white
+    # frame. Match body/.card to the same #0d1117 used for bgcolor and the
+    # header panel so the whole page is one consistent dark surface (also
+    # what makes an <iframe src="/subgraph/{id}"> embed borderless/seamless).
+    html = html.replace(
+        "</style>",
+        "body{background-color:#0d1117!important;margin:0;}"
+        ".card{background-color:#0d1117!important;border:none;box-shadow:none;}"
+        "</style>",
+        1,
+    )
     html = html.replace("<body>", "<body>" + panel_html, 1)
     output_path.write_text(html)
 

@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from api.routes import health, predict, subgraph
+from api.routes import console, health, predict, subgraph
 from api.state import STATE
 
 
@@ -22,3 +22,4 @@ app = FastAPI(title="Augur", version="1.0.0", lifespan=lifespan)
 app.include_router(health.router)
 app.include_router(predict.router)
 app.include_router(subgraph.router)
+app.include_router(console.router)

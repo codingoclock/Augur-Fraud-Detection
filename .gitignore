@@ -53,3 +53,6 @@ mlartifacts/
 .env
 data/processed/*.pkl
 full_run_log.txt
+
+# Personal project prep notes (decisions log + end-to-end explainer), not for the repo
+Prep/
